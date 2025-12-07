@@ -1,176 +1,148 @@
 <!DOCTYPE html>
-<html>
-
+<html lang="en">
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Real-time Chat</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <style>
-        #messages {
-            height: 400px;
-            overflow-y: auto;
-            background: #f8f9fa;
-        }
-
-        .message {
-            margin: 10px 0;
-        }
-
-        .me {
-            text-align: right;
-        }
-
-        .me .bubble {
-            background: #007bff;
-            color: white;
-        }
-
-        .bubble {
-            display: inline-block;
-            padding: 10px 15px;
-            border-radius: 20px;
-            max-width: 70%;
-        }
+        body { background: #f8f9fa; min-height: 100vh; }
+        .toast-container { position: fixed; top: 20px; right: 20px; z-index: 1090; }
+        #messages { height: 400px; overflow-y: auto; }
+        .msg-me { text-align: right; }
+        .msg-me .bubble { background: #007bff; color: white; }
+        .msg-other .bubble { background: #28a745; color: white; }
+        .bubble { display: inline-block; padding: 10px 15px; border-radius: 18px; max-width: 70%; margin-bottom: 10px; }
     </style>
 </head>
-
-<body class="p-4">
+<body class="py-4">
     <div class="container">
-        <h1 class="text-center mb-4">💬 Real-time Chat (Phase 5)</h1>
-
         <div class="row justify-content-center">
-            <div class="col-md-8">
+            <div class="col-md-8 col-lg-6">
+                <h2 class="text-center mb-4 text-primary">
+                    <i class="fas fa-comments me-2"></i>Real-time Chat
+                </h2>
+
                 <!-- Messages -->
                 <div class="card mb-4">
                     <div class="card-header bg-primary text-white">
-                        Messages
+                        <i class="fas fa-inbox me-2"></i>Messages
                     </div>
-                    <div id="messages" class="p-3">
-                        <div class="text-center text-muted py-4">
-                            <i class="fas fa-comments fa-3x mb-3 opacity-50"></i>
-                            <p>No messages yet. Send one!</p>
-                        </div>
+                    <div class="card-body" id="messages">
+                        <p class="text-muted text-center" id="noMessages">No messages yet...</p>
                     </div>
                 </div>
 
-                <!-- Send Form -->
+                <!-- Form -->
                 <div class="card">
                     <div class="card-body">
-                        <form id="messageForm">
-                            <div class="row">
-                                <div class="col-md-3">
-                                    <input type="number" class="form-control" id="senderId" value="1" min="1"
-                                        max="999" placeholder="Sender ID">
+                        <form id="msgForm">
+                            <div class="row g-2">
+                                <div class="col-3">
+                                    <input type="number" class="form-control" id="senderId" value="123" min="1" max="999">
                                 </div>
-                                <div class="col-md-7">
-                                    <input type="text" class="form-control" id="messageText"
-                                        placeholder="Type message..." required maxlength="200">
+                                <div class="col-7">
+                                    <input type="text" class="form-control" id="msgText" placeholder="Type message..." required>
                                 </div>
-                                <div class="col-md-2">
-                                    <button type="submit" class="btn btn-primary w-100">
-                                        <i class="fas fa-paper-plane"></i> Send
+                                <div class="col-2">
+                                    <button type="submit" class="btn btn-primary w-100" id="sendBtn">
+                                        <i class="fas fa-paper-plane"></i>
                                     </button>
                                 </div>
                             </div>
                         </form>
+                        <div id="status" class="mt-2 small text-muted">
+                            <i class="fas fa-spinner fa-spin"></i> Connecting...
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
     </div>
 
-    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="https://kit.fontawesome.com/a076d05399.js"></script>
+    <div class="toast-container"></div>
 
-    <script>
-        $('#messageForm').on('submit', function (e) {
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://js.pusher.com/8.2.0/pusher.min.js"></script>
+
+   <script>
+    $(function() {
+        // WEBSOCKET SETUP
+        var pusher = new Pusher('{{ env("REVERB_APP_KEY", "local-key") }}', {
+            wsHost: '{{ env("REVERB_HOST", "127.0.0.1") }}',
+            wsPort: {{ env("REVERB_PORT", 8080) }},
+            forceTLS: false,
+            disableStats: true,
+            enabledTransports: ['ws'],
+            cluster: 'mt1'
+        });
+
+        var channel = pusher.subscribe('chat-messages');
+
+        // LISTEN - Only shows OTHER users' messages
+        channel.bind('new-message', function(data) {
+            console.log('🌐 RECEIVED FROM OTHERS:', data);
+            showMessage(data.sender_id, data.message, data.id, 'other');
+            showToast('New Message!', 'User #' + data.sender_id + ': ' + data.message, 'success');
+        });
+
+        pusher.connection.bind('connected', function() {
+            $('#status').html('<i class="fas fa-check-circle text-success"></i> Connected! Socket: ' + pusher.connection.socket_id);
+            console.log('✅ CONNECTED, Socket ID:', pusher.connection.socket_id);
+        });
+
+        // SEND MESSAGE (with Socket ID)
+        $('#msgForm').on('submit', function(e) {
             e.preventDefault();
 
-            const senderId = $('#senderId').val();
-            const messageText = $('#messageText').val().trim();
-            const $sendBtn = $('#messageForm button[type="submit"]');
+            var senderId = $('#senderId').val();
+            var msgText = $('#msgText').val().trim();
+            if (!msgText) return;
 
-            if (!messageText) return;
+            $('#sendBtn').prop('disabled', true);
 
-            // 🔥 LOADING STATE
-            $sendBtn.html('<i class="fas fa-spinner fa-spin me-1"></i>Sending...').prop('disabled', true);
-
-            // AJAX Call
             $.ajax({
                 url: '/api/create/messages',
                 method: 'POST',
                 contentType: 'application/json',
-                data: JSON.stringify({
-                    sender_id: parseInt(senderId),
-                    message: messageText
-                }),
-                success: function (response) {
-                    console.log('✅ Success:', response);
-
-                    // Add message to chat
-                    addMessage(senderId, messageText, response.message_id, 'me');
-
-                    // SUCCESS TOAST
-                    showToast('✅ Sent!', `Message ID: #${response.message_id}`, 'success');
-
-                    // Clear input
-                    $('#messageText').val('');
+                headers: {
+                    'X-Socket-ID': pusher.connection.socket_id  // 🔥 EXCLUDE SENDER
                 },
-                error: function (xhr) {
-                    console.error('❌ Error:', xhr.responseText);
-                    showToast('❌ Failed!', 'Message not sent', 'danger');
+                data: JSON.stringify({ sender_id: parseInt(senderId), message: msgText }),
+                success: function(res) {
+                    console.log('✅ SENT:', res);
+                    showMessage(senderId, msgText, res.message_id, 'me');  // Show as "You"
+                    $('#msgText').val('');
                 },
-                // 🔥 ALWAYS RESET BUTTON (success OR error)
-                complete: function () {
-                    $sendBtn.html('<i class="fas fa-paper-plane me-1"></i>Send').prop('disabled', false);
+                error: function(err) {
+                    console.log('❌ ERROR:', err);
+                },
+                complete: function() {
+                    $('#sendBtn').prop('disabled', false);
                 }
             });
         });
 
-        // 🔥 PERFECT TOAST FUNCTION
-        function showToast(title, message, type) {
-            // Create toast HTML
-            const toastHtml = `
-            <div class="toast align-items-center text-white bg-${type} border-0" role="alert">
-                <div class="d-flex">
-                    <div class="toast-body">
-                        <strong class="me-2">${title}</strong>${message}
-                    </div>
-                    <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
-                </div>
-            </div>
-        `;
-
-            // Add container if missing
-            if (!$('.toast-container').length) {
-                $('body').append('<div class="toast-container position-fixed top-0 end-0 p-3" style="z-index: 1090;"></div>');
-            }
-
-            // Add + show toast
-            $('.toast-container').append(toastHtml);
-            const toastEl = $('.toast-container .toast:last')[0];
-            const toast = new bootstrap.Toast(toastEl);
-            toast.show();
-
-            // Auto remove after 4 seconds
-            setTimeout(() => $(toastEl).alert('close'), 4000);
-        }
-
-        // Add message to chat
-        function addMessage(senderId, text, id, type) {
-            $('#messages .text-center').remove();
-            const html = `
-            <div class="message ${type}">
-                <div class="bubble">
-                    <strong>${type === 'me' ? 'You' : 'User #' + senderId}</strong><br>
-                    ${text}<br><small class="opacity-75">#${id}</small>
-                </div>
-            </div>
-        `;
+        function showMessage(senderId, text, id, type) {
+            $('#noMessages').remove();
+            var html = '<div class="msg-' + type + '">' +
+                '<div class="bubble">' +
+                '<strong>' + (type === 'me' ? 'You' : 'User #' + senderId) + '</strong><br>' +
+                text + '<br><small>#' + id + '</small></div></div>';
             $('#messages').append(html).scrollTop($('#messages')[0].scrollHeight);
         }
-    </script>
+
+        function showToast(title, msg, type) {
+            var html = '<div class="toast show align-items-center text-white bg-' + type + ' border-0">' +
+                '<div class="d-flex"><div class="toast-body"><strong>' + title + '</strong><br>' + msg + '</div>' +
+                '<button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button></div></div>';
+            $('.toast-container').append(html);
+            setTimeout(function() { $('.toast-container .toast').first().remove(); }, 5000);
+        }
+    });
+</script>
 
 </body>
-
 </html>
