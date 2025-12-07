@@ -10,12 +10,11 @@ return new class extends Migration
     {
         Schema::create('messages', function (Blueprint $table) {
             $table->id();
-            $table->unsignedBigInteger('user_id')->default(1);
+            $table->unsignedBigInteger('user_id')->default(1);  // No FK
             $table->text('message');
             $table->json('meta')->nullable();
             $table->timestamps();
-            
-            $table->foreign('user_id')->references('id')->on('users');
+            // ✅ NO FOREIGN KEY CONSTRAINT!
         });
     }
 
